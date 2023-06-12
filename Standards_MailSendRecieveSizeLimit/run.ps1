@@ -8,7 +8,7 @@ try {
     $users = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/users/?`$top=999&`$select=id,userPrincipalName,assignedLicenses" -Tenantid $tenantfilter
     $MaxSendSize = "150MB"
     $MaxReceiveSize = "150MB"
-    (New-ExoRequest -tenantid $TenantFilter -cmdlet "Get-mailbox") |Select UserPrincipalName|%{  (New-ExoRequest -tenantid $TenantFilter -cmdlet "Set-Mailbox" -cmdParams @{Identity = $_.userprincipalname; MaxSendSize = $MaxSendSize; MaxReceiveSize = $MaxReceiveSize;}})
+    (New-ExoRequest -tenantid $TenantFilter -cmdlet "Get-mailbox") |Select UserPrincipalName|%{  (New-ExoRequest -tenantid $TenantFilter -cmdlet "Set-Mailbox" -cmdParams @{Identity = $_.userprincipalname; MaxSendSize = $MaxSendSize; MaxReceiveSize = $MaxReceiveSize}})
 }
 catch {
     $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
