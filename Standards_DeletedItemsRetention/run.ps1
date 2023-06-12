@@ -7,7 +7,7 @@ try {
     }
     $users = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/users/?`$top=999&`$select=id,userPrincipalName,assignedLicenses" -Tenantid $tenantfilter
     (New-ExoRequest -tenantid $TenantFilter -cmdlet "Get-mailbox") |Select UserPrincipalName|%{  (New-ExoRequest -tenantid $TenantFilter -cmdlet "Set-Mailbox" -cmdParams @{Identity = $_.userprincipalname; RetainDeletedItemsFor = 30}})
-    (New-ExoRequest -tenantid $TenantFilter -cmdlet "Get-mailboxPlan") |Select UserPrincipalName|%{  (New-ExoRequest -tenantid $TenantFilter -cmdlet "Set-MailboxPlan" -cmdParams @{Identity = $_.userprincipalname; RetainDeletedItemsFor = 30}})
+    (New-ExoRequest -tenantid $TenantFilter -cmdlet "Get-mailboxPlan") |Select id|%{  (New-ExoRequest -tenantid $TenantFilter -cmdlet "Set-MailboxPlan" -cmdParams @{Identity = $_.id; RetainDeletedItemsFor = 30}})
 }
 catch {
     $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
