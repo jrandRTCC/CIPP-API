@@ -11,5 +11,5 @@ try {
 }
 catch {
     $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
-    Write-LogMessage -API "Standards" -tenant $tenant -message "Failed to apply Unified Audit Log Extra. Error: $ErrorMessage" -sev Error
+    Write-LogMessage -API "Standards" -tenant $tenant -message "Failed to apply deleted items retention. Error: $ErrorMessage" -sev Error
 }
