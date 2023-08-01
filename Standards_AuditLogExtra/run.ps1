@@ -1,5 +1,6 @@
 param($tenant)
 
+Write-LogMessage -API "Standards" -tenant $tenant -message "Trying to apply Unified Audit Log Extra." -sev Info
 try {
     $DehydratedTenant = (New-ExoRequest -tenantid $Tenant -cmdlet "Get-OrganizationConfig").IsDehydrated
     if ($DehydratedTenant) {
