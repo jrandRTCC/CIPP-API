@@ -4,9 +4,9 @@
 name: Build and deploy Powershell project to Azure Function App - cippzc2fk
 
 on:
-  push:
-    branches:
-      - master
+#  push:
+#    branches:
+#      - master
   workflow_dispatch:
 
 env:
