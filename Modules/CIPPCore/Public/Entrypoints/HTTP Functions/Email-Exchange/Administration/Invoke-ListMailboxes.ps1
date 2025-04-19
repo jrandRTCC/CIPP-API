@@ -11,12 +11,13 @@ Function Invoke-ListMailboxes {
     param($Request, $TriggerMetadata)
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $Headers = $Request.Headers
+    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
 
     # Interact with query parameters or the body of the request.
-    $TenantFilter = $Request.Query.TenantFilter
+    $TenantFilter = $Request.Query.tenantFilter
     try {
-        $Select = 'id,ExchangeGuid,ArchiveGuid,UserPrincipalName,DisplayName,PrimarySMTPAddress,RecipientType,RecipientTypeDetails,EmailAddresses,WhenSoftDeleted,IsInactiveMailbox,ForwardingSmtpAddress,DeliverToMailboxAndForward,ForwardingAddress,HiddenFromAddressListsEnabled,ExternalDirectoryObjectId,MessageCopyForSendOnBehalfEnabled,MessageCopyForSentAsEnabled'
+        $Select = 'id,ExchangeGuid,ArchiveGuid,UserPrincipalName,DisplayName,PrimarySMTPAddress,RecipientType,RecipientTypeDetails,EmailAddresses,WhenSoftDeleted,IsInactiveMailbox,ForwardingSmtpAddress,DeliverToMailboxAndForward,ForwardingAddress,HiddenFromAddressListsEnabled,ExternalDirectoryObjectId,MessageCopyForSendOnBehalfEnabled,MessageCopyForSentAsEnabled,PersistedCapabilities,LitigationHoldEnabled,LitigationHoldDate,LitigationHoldDuration,ComplianceTagHoldApplied,RetentionHoldEnabled,InPlaceHolds'
         $ExoRequest = @{
             tenantid  = $TenantFilter
             cmdlet    = 'Get-Mailbox'
@@ -32,6 +33,7 @@ Function Invoke-ListMailboxes {
             @{Parameter = 'PublicFolder'; Type = 'Bool' }
             @{Parameter = 'RecipientTypeDetails'; Type = 'String' }
             @{Parameter = 'SoftDeletedMailbox'; Type = 'Bool' }
+            @{Parameter = 'Identity'; Type = 'String' }
         )
 
         foreach ($Param in $Request.Query.PSObject.Properties.Name) {
@@ -54,8 +56,8 @@ Function Invoke-ListMailboxes {
             }
         }
 
-        $GraphRequest = (New-ExoRequest @ExoRequest) | Select-Object id, ExchangeGuid, ArchiveGuid, WhenSoftDeleted, @{ Name = 'UPN'; Expression = { $_.'UserPrincipalName' } },
-
+        $GraphRequest = (New-ExoRequest @ExoRequest) | Select-Object id, ExchangeGuid, ArchiveGuid, WhenSoftDeleted,
+        @{ Name = 'UPN'; Expression = { $_.'UserPrincipalName' } },
         @{ Name = 'displayName'; Expression = { $_.'DisplayName' } },
         @{ Name = 'primarySmtpAddress'; Expression = { $_.'PrimarySMTPAddress' } },
         @{ Name = 'recipientType'; Expression = { $_.'RecipientType' } },
@@ -67,7 +69,15 @@ Function Invoke-ListMailboxes {
         HiddenFromAddressListsEnabled,
         ExternalDirectoryObjectId,
         MessageCopyForSendOnBehalfEnabled,
-        MessageCopyForSentAsEnabled
+        MessageCopyForSentAsEnabled,
+        LitigationHoldEnabled,
+        LitigationHoldDate,
+        LitigationHoldDuration,
+        @{ Name = 'LicensedForLitigationHold'; Expression = { ($_.PersistedCapabilities -contains 'BPOS_S_DlpAddOn' -or $_.PersistedCapabilities -contains 'BPOS_S_Enterprise') } },
+        ComplianceTagHoldApplied,
+        RetentionHoldEnabled,
+        InPlaceHolds
+
         $StatusCode = [HttpStatusCode]::OK
     } catch {
         $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
