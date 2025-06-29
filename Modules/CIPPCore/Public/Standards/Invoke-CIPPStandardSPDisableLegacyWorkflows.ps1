@@ -24,17 +24,16 @@ function Invoke-CIPPStandardSPDisableLegacyWorkflows {
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/sharepoint-standards#low-impact
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
     param($Tenant, $Settings)
-    ##$Rerun -Type Standard -Tenant $Tenant -Settings $Settings 'SPDisableLegacyWorkflows'
 
     $CurrentState = Get-CIPPSPOTenant -TenantFilter $Tenant |
-    Select-Object -Property *
+        Select-Object -Property *
 
     $StateIsCorrect = ($CurrentState.StopNew2010Workflows -eq $true) -and
-                      ($CurrentState.StopNew2013Workflows -eq $true) -and
-                      ($CurrentState.DisableBackToClassic -eq $true)
+    ($CurrentState.StopNew2013Workflows -eq $true) -and
+    ($CurrentState.DisableBackToClassic -eq $true)
 
     if ($Settings.remediate -eq $true) {
         if ($StateIsCorrect -eq $true) {
@@ -58,13 +57,21 @@ function Invoke-CIPPStandardSPDisableLegacyWorkflows {
 
     if ($Settings.alert -eq $true) {
         if ($StateIsCorrect -eq $true) {
-            Write-LogMessage -API 'Standards' -Tenant $Tenant -Message 'Legacy Workflows are disabled' -Sev Info
+            Write-LogMessage -API 'Standards' -Tenant $Tenant -Message 'SharePoint Legacy Workflows are disabled' -Sev Info
         } else {
-            Write-LogMessage -API 'Standards' -Tenant $Tenant -Message 'Legacy Workflows are enabled' -Sev Info
+            $Message = 'SharePoint Legacy Workflows is not disabled.'
+            Write-StandardsAlert -message $Message -object $CurrentState -tenant $Tenant -standardName 'SPDisableLegacyWorkflows' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -Tenant $Tenant -Message $Message -Sev Info
         }
     }
 
     if ($Settings.report -eq $true) {
         Add-CIPPBPAField -FieldName 'SPDisableLegacyWorkflows' -FieldValue $StateIsCorrect -StoreAs bool -Tenant $Tenant
+        if ($StateIsCorrect) {
+            $FieldValue = $true
+        } else {
+            $FieldValue = $CurrentState
+        }
+        Set-CIPPStandardsCompareField -FieldName 'standards.SPDisableLegacyWorkflows' -FieldValue $FieldValue -Tenant $Tenant
     }
 }
