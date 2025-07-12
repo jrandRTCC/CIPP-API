@@ -10,8 +10,19 @@ function Push-ExecScheduledCommand {
     $Table = Get-CippTable -tablename 'ScheduledTasks'
     $task = $Item.TaskInfo
     $commandParameters = $Item.Parameters | ConvertTo-Json -Depth 10 | ConvertFrom-Json -AsHashtable
+
+    # Handle tenant resolution - support both direct tenant and group-expanded tenants
     $Tenant = $Item.Parameters.TenantFilter ?? $Item.TaskInfo.Tenant
+
+    # For tenant group tasks, the tenant will be the expanded tenant from the orchestrator
+    # We don't need to expand groups here as that's handled in the orchestrator
     $TenantInfo = Get-Tenants -TenantFilter $Tenant
+
+    $null = Update-AzDataTableEntity -Force @Table -Entity @{
+        PartitionKey = $task.PartitionKey
+        RowKey       = $task.RowKey
+        TaskState    = 'Running'
+    }
 
     $Function = Get-Command -Name $Item.Command
     if ($null -eq $Function) {
@@ -23,6 +34,7 @@ function Push-ExecScheduledCommand {
             Results      = "$Results"
             TaskState    = $State
         }
+
         Write-LogMessage -API 'Scheduler_UserTasks' -tenant $Tenant -tenantid $TenantInfo.customerId -message "Failed to execute task $($task.Name): The command $($Item.Command) does not exist." -sev Error
         return
     }
@@ -50,6 +62,7 @@ function Push-ExecScheduledCommand {
             $results = & $Item.Command @commandParameters
         } catch {
             $results = "Task Failed: $($_.Exception.Message)"
+            $State = 'Failed'
         }
 
         Write-Host 'ran the command. Processing results'
@@ -61,9 +74,12 @@ function Push-ExecScheduledCommand {
             if ($results -is [String]) {
                 $results = @{ Results = $results }
             }
-            if ($results -is [array] -and $results[0] -is [string]) {
-                $results = $results | Where-Object { $_ -is [string] }
-                $results = $results | ForEach-Object { @{ Results = $_ } }
+            if ($results -is [array] -and $results[0] -is [string] -or $results[0].resultText -is [string]) {
+                $results = $results | Where-Object { $_ -is [string] -or $_.resultText -is [string] }
+                $results = $results | ForEach-Object {
+                    $Message = $_.resultText ?? $_
+                    @{ Results = $Message }
+                }
             }
 
             if ($results -is [string]) {
@@ -74,8 +90,15 @@ function Push-ExecScheduledCommand {
             }
         }
 
-        if ($StoredResults.Length -gt 64000 -or $task.Tenant -eq 'AllTenants') {
-            $StoredResults = @{ Results = 'The results for this query are too long to store in this table, or the query was meant for All Tenants. Please use the options to send the results to another target to be able to view the results. ' } | ConvertTo-Json -Compress
+        if ($StoredResults.Length -gt 64000 -or $task.Tenant -eq 'AllTenants' -or $task.TenantGroup) {
+            $TaskResultsTable = Get-CippTable -tablename 'ScheduledTaskResults'
+            $TaskResults = @{
+                PartitionKey = $task.RowKey
+                RowKey       = $Tenant
+                Results      = [string](ConvertTo-Json -Compress -Depth 20 $results)
+            }
+            $null = Add-CIPPAzDataTableEntity @TaskResultsTable -Entity $TaskResults -Force
+            $StoredResults = @{ Results = 'Completed, details are available in the More Info pane' } | ConvertTo-Json -Compress
         }
     } catch {
         $errorMessage = $_.Exception.Message
@@ -102,6 +125,7 @@ function Push-ExecScheduledCommand {
             '*email*' { Send-CIPPAlert -Type 'email' -Title $title -HTMLContent $HTML -TenantFilter $Tenant }
             '*webhook*' {
                 $Webhook = [PSCustomObject]@{
+                    'tenantId' = $TenantInfo.customerId
                     'Tenant'   = $Tenant
                     'TaskInfo' = $Item.TaskInfo
                     'Results'  = $Results
@@ -112,42 +136,47 @@ function Push-ExecScheduledCommand {
     }
     Write-Host 'Sent the results to the target. Updating the task state.'
 
-    if ($task.Recurrence -eq '0' -or [string]::IsNullOrEmpty($task.Recurrence)) {
-        Write-Host 'Recurrence empty or 0. Task is not recurring. Setting task state to completed.'
-        Update-AzDataTableEntity -Force @Table -Entity @{
-            PartitionKey = $task.PartitionKey
-            RowKey       = $task.RowKey
-            Results      = "$StoredResults"
-            TaskState    = 'Completed'
-        }
-    } else {
-        #if recurrence is just a number, add it in days.
-        if ($task.Recurrence -match '^\d+$') {
-            $task.Recurrence = $task.Recurrence + 'd'
-        }
-        $secondsToAdd = switch -Regex ($task.Recurrence) {
-            '(\d+)m$' { [int64]$matches[1] * 60 }
-            '(\d+)h$' { [int64]$matches[1] * 3600 }
-            '(\d+)d$' { [int64]$matches[1] * 86400 }
-            default { throw "Unsupported recurrence format: $($task.Recurrence)" }
-        }
+    try {
+        if ($task.Recurrence -eq '0' -or [string]::IsNullOrEmpty($task.Recurrence)) {
+            Write-Host 'Recurrence empty or 0. Task is not recurring. Setting task state to completed.'
+            Update-AzDataTableEntity -Force @Table -Entity @{
+                PartitionKey = $task.PartitionKey
+                RowKey       = $task.RowKey
+                Results      = "$StoredResults"
+                TaskState    = 'Completed'
+            }
+        } else {
+            #if recurrence is just a number, add it in days.
+            if ($task.Recurrence -match '^\d+$') {
+                $task.Recurrence = $task.Recurrence + 'd'
+            }
+            $secondsToAdd = switch -Regex ($task.Recurrence) {
+                '(\d+)m$' { [int64]$matches[1] * 60 }
+                '(\d+)h$' { [int64]$matches[1] * 3600 }
+                '(\d+)d$' { [int64]$matches[1] * 86400 }
+                default { 0 }
+            }
 
-        if ($secondsToAdd -gt 0) {
-            $unixtimeNow = [int64](([datetime]::UtcNow) - (Get-Date '1/1/1970')).TotalSeconds
-            if ([int64]$task.ScheduledTime -lt ($unixtimeNow - $secondsToAdd)) {
-                $task.ScheduledTime = $unixtimeNow
+            if ($secondsToAdd -gt 0) {
+                $unixtimeNow = [int64](([datetime]::UtcNow) - (Get-Date '1/1/1970')).TotalSeconds
+                if ([int64]$task.ScheduledTime -lt ($unixtimeNow - $secondsToAdd)) {
+                    $task.ScheduledTime = $unixtimeNow
+                }
+            }
+
+            $nextRunUnixTime = [int64]$task.ScheduledTime + [int64]$secondsToAdd
+            Write-Host "The job is recurring. It was scheduled for $($task.ScheduledTime). The next runtime should be $nextRunUnixTime"
+            Update-AzDataTableEntity -Force @Table -Entity @{
+                PartitionKey  = $task.PartitionKey
+                RowKey        = $task.RowKey
+                Results       = "$StoredResults"
+                TaskState     = 'Planned'
+                ScheduledTime = "$nextRunUnixTime"
             }
         }
-
-        $nextRunUnixTime = [int64]$task.ScheduledTime + [int64]$secondsToAdd
-        Write-Host "The job is recurring. It was scheduled for $($task.ScheduledTime). The next runtime should be $nextRunUnixTime"
-        Update-AzDataTableEntity -Force @Table -Entity @{
-            PartitionKey  = $task.PartitionKey
-            RowKey        = $task.RowKey
-            Results       = "$StoredResults"
-            TaskState     = 'Planned'
-            ScheduledTime = "$nextRunUnixTime"
-        }
+    } catch {
+        Write-Warning "Failed to update task state: $($_.Exception.Message)"
+        Write-Information $_.InvocationInfo.PositionMessage
     }
     if ($TaskType -ne 'Alert') {
         Write-LogMessage -API 'Scheduler_UserTasks' -tenant $Tenant -tenantid $TenantInfo.customerId -message "Successfully executed task: $($task.Name)" -sev Info

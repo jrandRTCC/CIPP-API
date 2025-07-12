@@ -15,7 +15,7 @@ function Invoke-CIPPStandardConditionalAccessTemplate {
         MULTIPLE
             True
         DISABLEDFEATURES
-            
+            {"report":true,"warn":true,"remediate":false}
         IMPACT
             High Impact
         ADDEDDATE
@@ -26,14 +26,12 @@ function Invoke-CIPPStandardConditionalAccessTemplate {
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
     param($Tenant, $Settings)
     ##$Rerun -Type Standard -Tenant $Tenant -Settings $Settings 'ConditionalAccess'
 
     If ($Settings.remediate -eq $true) {
-
-        $APINAME = 'Standards'
 
         foreach ($Setting in $Settings) {
             try {
@@ -41,7 +39,7 @@ function Invoke-CIPPStandardConditionalAccessTemplate {
                 $Table = Get-CippTable -tablename 'templates'
                 $Filter = "PartitionKey eq 'CATemplate' and RowKey eq '$($Setting.TemplateList.value)'"
                 $JSONObj = (Get-CippAzDataTableEntity @Table -Filter $Filter).JSON
-                $null = New-CIPPCAPolicy -replacePattern 'displayName' -TenantFilter $tenant -state $Setting.state -RawJSON $JSONObj -Overwrite $true -APIName $APIName -Headers $Request.Headers
+                $null = New-CIPPCAPolicy -replacePattern 'displayName' -TenantFilter $tenant -state $Setting.state -RawJSON $JSONObj -Overwrite $true -APIName $APIName -Headers $Request.Headers -DisableSD $Setting.DisableSD
             } catch {
                 $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
                 Write-LogMessage -API 'Standards' -tenant $tenant -message "Failed to create or update conditional access rule $($JSONObj.displayName). Error: $ErrorMessage" -sev 'Error'
