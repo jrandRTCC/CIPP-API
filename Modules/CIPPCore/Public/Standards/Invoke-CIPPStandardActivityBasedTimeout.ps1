@@ -28,7 +28,7 @@ function Invoke-CIPPStandardActivityBasedTimeout {
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/global-standards#medium-impact
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
 
     param($Tenant, $Settings)
@@ -43,10 +43,14 @@ function Invoke-CIPPStandardActivityBasedTimeout {
         Return
     }
 
-    # Backwards compatibility for v5.7.0 and older
-    if ($null -eq $timeout ) { $timeout = '01:00:00' }
-
-    $CurrentState = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/policies/activityBasedTimeoutPolicies' -tenantid $Tenant
+    try {
+        $CurrentState = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/policies/activityBasedTimeoutPolicies' -tenantid $Tenant
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the ActivityBasedTimeout state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
     $StateIsCorrect = if ($CurrentState.definition -like "*$timeout*") { $true } else { $false }
 
     If ($Settings.remediate -eq $true) {
@@ -84,12 +88,13 @@ function Invoke-CIPPStandardActivityBasedTimeout {
         if ($StateIsCorrect -eq $true) {
             Write-LogMessage -API 'Standards' -tenant $Tenant -message "Activity Based Timeout is enabled and set to $timeout" -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Activity Based Timeout is not set to $timeout" -sev Alert
+            Write-StandardsAlert -message "Activity Based Timeout is not set to $timeout" -object ($CurrentState.definition | ConvertFrom-Json -ErrorAction SilentlyContinue).activitybasedtimeoutpolicy.ApplicationPolicies -tenant $Tenant -standardName 'ActivityBasedTimeout' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Activity Based Timeout is not set to $timeout" -sev Info
         }
     }
 
     if ($Settings.report -eq $true) {
-
+        Set-CIPPStandardsCompareField -FieldName 'standards.ActivityBasedTimeout' -FieldValue $StateIsCorrect -TenantFilter $Tenant
         Add-CIPPBPAField -FieldName 'ActivityBasedTimeout' -FieldValue $StateIsCorrect -StoreAs bool -Tenant $Tenant
     }
 
