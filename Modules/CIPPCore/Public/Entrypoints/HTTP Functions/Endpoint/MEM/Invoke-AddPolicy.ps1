@@ -1,6 +1,6 @@
 using namespace System.Net
 
-Function Invoke-AddPolicy {
+function Invoke-AddPolicy {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -11,10 +11,11 @@ Function Invoke-AddPolicy {
     param($Request, $TriggerMetadata)
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $Headers = $Request.Headers
+    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
 
-    $Tenants = ($Request.Body.tenantFilter.value)
-    if ('AllTenants' -in $Tenants) { $Tenants = (Get-Tenants).defaultDomainName }
+    $Tenants = $Request.Body.tenantFilter.value ? $Request.Body.tenantFilter.value : $Request.Body.tenantFilter
+    if ('AllTenants' -in $Tenants) { $Tetnants = (Get-Tenants).defaultDomainName }
     $displayname = $Request.Body.displayName
     $description = $Request.Body.Description
     $AssignTo = if ($Request.Body.AssignTo -ne 'on') { $Request.Body.AssignTo }
@@ -24,7 +25,7 @@ Function Invoke-AddPolicy {
 
     $results = foreach ($Tenant in $tenants) {
         if ($Request.Body.replacemap.$tenant) {
-        ([pscustomobject]$Request.Body.replacemap.$tenant).psobject.properties | ForEach-Object { $RawJson = $RawJson -replace $_.name, $_.value }
+            ([pscustomobject]$Request.Body.replacemap.$tenant).psobject.properties | ForEach-Object { $RawJson = $RawJson -replace $_.name, $_.value }
         }
         try {
             Write-Host 'Calling Adding policy'
