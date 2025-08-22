@@ -1,9 +1,9 @@
 using namespace System.Net
 
-Function Invoke-ListCAtemplates {
+function Invoke-ListCAtemplates {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         Tenant.ConditionalAccess.Read
     #>
@@ -11,10 +11,10 @@ Function Invoke-ListCAtemplates {
     param($Request, $TriggerMetadata)
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $Headers = $Request.Headers
+    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
 
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
+
     Write-Host $Request.query.id
     #Migrating old policies whenever you do a list
     $Table = Get-CippTable -tablename 'templates'
@@ -39,9 +39,14 @@ Function Invoke-ListCAtemplates {
     $Table = Get-CippTable -tablename 'templates'
     $Filter = "PartitionKey eq 'CATemplate'"
     $Templates = (Get-CIPPAzDataTableEntity @Table -Filter $Filter) | ForEach-Object {
-        $data = $_.JSON | ConvertFrom-Json -Depth 100
-        $data | Add-Member -NotePropertyName 'GUID' -NotePropertyValue $_.GUID -Force
-        $data
+        try {
+            $row = $_
+            $data = $row.JSON | ConvertFrom-Json -Depth 100 -ErrorAction Stop
+            $data | Add-Member -NotePropertyName 'GUID' -NotePropertyValue $row.GUID -Force
+            $data
+        } catch {
+            Write-Warning "Failed to process CA template: $($row.RowKey) - $($_.Exception.Message)"
+        }
     } | Sort-Object -Property displayName
 
     if ($Request.query.ID) { $Templates = $Templates | Where-Object -Property GUID -EQ $Request.query.id }

@@ -28,13 +28,25 @@ function Invoke-CIPPStandardsharingCapability {
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/sharepoint-standards#high-impact
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
 
     param($Tenant, $Settings)
-    ##$Rerun -Type Standard -Tenant $Tenant -Settings $Settings 'sharingCapability'
+    $TestResult = Test-CIPPStandardLicense -StandardName 'sharingCapability' -TenantFilter $Tenant -RequiredCapabilities @('SHAREPOINTWAC', 'SHAREPOINTSTANDARD', 'SHAREPOINTENTERPRISE', 'SHAREPOINTENTERPRISE_EDU','ONEDRIVE_BASIC', 'ONEDRIVE_ENTERPRISE')
 
-    $CurrentInfo = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/admin/sharepoint/settings' -tenantid $Tenant -AsApp $true
+    if ($TestResult -eq $false) {
+        Write-Host "We're exiting as the correct license is not present for this standard."
+        return $true
+    } #we're done.
+
+    try {
+        $CurrentInfo = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/admin/sharepoint/settings' -tenantid $Tenant -AsApp $true
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the sharingCapability state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     if ($Settings.report -eq $true) {
         Add-CIPPBPAField -FieldName 'sharingCapability' -FieldValue $CurrentInfo.sharingCapability -StoreAs string -Tenant $Tenant
@@ -46,10 +58,10 @@ function Invoke-CIPPStandardsharingCapability {
     # Input validation
     if (([string]::IsNullOrWhiteSpace($level) -or $level -eq 'Select a value') -and ($Settings.remediate -eq $true -or $Settings.alert -eq $true)) {
         Write-LogMessage -API 'Standards' -tenant $Tenant -message 'sharingCapability: Invalid sharingCapability parameter set' -sev Error
-        Return
+        return
     }
 
-    If ($Settings.remediate -eq $true) {
+    if ($Settings.remediate -eq $true) {
 
         if ($CurrentInfo.sharingCapability -eq $level) {
             Write-Host "Sharing level is already set to $level"
@@ -71,11 +83,20 @@ function Invoke-CIPPStandardsharingCapability {
     }
 
     if ($Settings.alert -eq $true) {
-
         if ($CurrentInfo.sharingCapability -eq $level) {
             Write-LogMessage -API 'Standards' -tenant $Tenant -message "Sharing level is set to $level" -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Sharing level is not set to $level" -sev Alert
+            Write-StandardsAlert -message "Sharing level is not set to $level" -object $CurrentInfo -tenant $Tenant -standardName 'sharingCapability' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Sharing level is not set to $level" -sev Info
         }
+    }
+
+    if ($Settings.report -eq $true) {
+        if ($CurrentInfo.sharingCapability -eq $level) {
+            $FieldValue = $true
+        } else {
+            $FieldValue = $CurrentInfo | Select-Object -Property sharingCapability
+        }
+        Set-CIPPStandardsCompareField -FieldName 'standards.sharingCapability' -FieldValue $FieldValue -Tenant $Tenant
     }
 }
