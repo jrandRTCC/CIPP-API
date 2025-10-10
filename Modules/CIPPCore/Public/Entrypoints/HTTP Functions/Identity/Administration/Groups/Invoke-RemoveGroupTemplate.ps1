@@ -1,9 +1,7 @@
-using namespace System.Net
-
 Function Invoke-RemoveGroupTemplate {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         Identity.Group.ReadWrite
     #>
@@ -12,7 +10,7 @@ Function Invoke-RemoveGroupTemplate {
 
     $APIName = $Request.Params.CIPPEndpoint
     $Headers = $Request.Headers
-    Write-LogMessage -Headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
+
 
     $ID = $request.Query.ID ?? $Request.Body.ID
     try {
@@ -34,8 +32,7 @@ Function Invoke-RemoveGroupTemplate {
     }
 
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = $StatusCode
             Body       = @{'Results' = $Result }
         })
