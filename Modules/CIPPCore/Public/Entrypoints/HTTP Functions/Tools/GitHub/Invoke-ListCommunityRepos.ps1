@@ -5,7 +5,7 @@ function Invoke-ListCommunityRepos {
     .DESCRIPTION
         This function lists community repositories in Table Storage
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         CIPP.Core.Read
     #>
@@ -73,7 +73,7 @@ function Invoke-ListCommunityRepos {
         Results = @($Repos | Sort-Object -Property FullName)
     }
 
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $Body
         })

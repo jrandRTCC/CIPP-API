@@ -1,5 +1,3 @@
-using namespace System.Net
-
 Function Invoke-ListInactiveAccounts {
     <#
     .FUNCTIONALITY
@@ -9,17 +7,8 @@ Function Invoke-ListInactiveAccounts {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $Request.Params.CIPPEndpoint
-    $User = $Request.Headers
-    Write-LogMessage -Headers $User -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
-
     # Convert the TenantFilter parameter to a list of tenant IDs for AllTenants or a single tenant ID
-    $TenantFilter = $Request.Query.TenantFilter
+    $TenantFilter = $Request.Query.tenantFilter
     if ($TenantFilter -eq 'AllTenants') {
         $TenantFilter = (Get-Tenants).customerId
     } else {
@@ -35,8 +24,7 @@ Function Invoke-ListInactiveAccounts {
         $GraphRequest = "Could not connect to Azure Lighthouse API: $($ErrorMessage)"
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = $StatusCode
             Body       = @($GraphRequest)
         })
