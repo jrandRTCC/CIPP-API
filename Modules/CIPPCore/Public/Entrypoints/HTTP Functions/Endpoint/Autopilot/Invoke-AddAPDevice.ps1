@@ -1,5 +1,3 @@
-using namespace System.Net
-
 Function Invoke-AddAPDevice {
     <#
     .FUNCTIONALITY
@@ -11,11 +9,6 @@ Function Invoke-AddAPDevice {
     param($Request, $TriggerMetadata)
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
     $TenantFilter = (Get-Tenants | Where-Object { $_.defaultDomainName -eq $Request.body.TenantFilter.value }).customerId
     $GroupName = if ($Request.body.Groupname) { $Request.body.Groupname } else { (New-Guid).GUID }
     Write-Host $GroupName
@@ -38,7 +31,7 @@ Function Invoke-AddAPDevice {
             }
             $body = ConvertTo-Json -Depth 10 -Compress -InputObject @($body)
             Write-Host $body
-            $GraphRequest = (New-GraphPostRequest -returnHeaders $true -uri "https://api.partnercenter.microsoft.com/v1/$($CurrentStatus.items.deviceslink.uri)" -body $body -scope 'https://api.partnercenter.microsoft.com/user_impersonation')
+            $GraphRequest = (New-GraphPostRequest -returnHeaders $true -uri "https://api.partnercenter.microsoft.com/v1/customers/$TenantFilter/deviceBatches/$groupname/devices" -body $body -scope 'https://api.partnercenter.microsoft.com/user_impersonation')
         } else {
             $body = '{"batchId":"' + $($GroupName) + '","devices":' + $Devices + '}'
             $GraphRequest = (New-GraphPostRequest -returnHeaders $true -uri "https://api.partnercenter.microsoft.com/v1/customers/$TenantFilter/DeviceBatches" -body $body -scope 'https://api.partnercenter.microsoft.com/user_impersonation')
@@ -67,8 +60,7 @@ Function Invoke-AddAPDevice {
 
     $body = [pscustomobject]@{'Results' = $Result }
     Write-Host $body
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $body
 
