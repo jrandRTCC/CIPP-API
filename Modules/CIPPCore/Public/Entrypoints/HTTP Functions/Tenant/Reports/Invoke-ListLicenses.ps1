@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ListLicenses {
+function Invoke-ListLicenses {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -9,20 +7,10 @@ Function Invoke-ListLicenses {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
-
     # Interact with query parameters or the body of the request.
-    $TenantFilter = $Request.Query.TenantFilter
-    $RawGraphRequest = if ($TenantFilter -ne 'AllTenants') {
+    $TenantFilter = $Request.Query.tenantFilter
+    if ($TenantFilter -ne 'AllTenants') {
         $GraphRequest = Get-CIPPLicenseOverview -TenantFilter $TenantFilter | ForEach-Object {
-            $TermInfo = $_.TermInfo | ConvertFrom-Json -ErrorAction SilentlyContinue
-            $_.TermInfo = $TermInfo
             $_
         }
     } else {
@@ -48,21 +36,18 @@ Function Invoke-ListLicenses {
                 Write-Host "Started permissions orchestration with ID = '$InstanceId'"
             }
         } else {
-            $GraphRequest = $Rows | Where-Object { $_.License } | ForEach-Object {
-                if ($_.TermInfo) {
-                    $TermInfo = $_.TermInfo | ConvertFrom-Json -ErrorAction SilentlyContinue
-                    $_.TermInfo = $TermInfo
-                } else {
-                    $_ | Add-Member -NotePropertyName TermInfo -NotePropertyValue $null
+            $GraphRequest = $Rows | ForEach-Object {
+                $LicenseData = $_.License | ConvertFrom-Json -ErrorAction SilentlyContinue
+                foreach ($License in $LicenseData) {
+                    $License
                 }
-                $_
             }
         }
     }
 
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = @($GraphRequest)
-        }) -Clobber
+        })
 
 }
