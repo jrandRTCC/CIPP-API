@@ -6,14 +6,15 @@ function Get-CIPPMFAState {
         $APIName = 'Get MFA Status',
         $Headers
     )
-    $PerUserMFAState = Get-CIPPPerUserMFA -TenantFilter $TenantFilter -AllUsers $true
-    $users = foreach ($user in (New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/users?$top=999&$select=id,UserPrincipalName,DisplayName,accountEnabled,assignedLicenses' -tenantid $TenantFilter)) {
+    #$PerUserMFAState = Get-CIPPPerUserMFA -TenantFilter $TenantFilter -AllUsers $true
+    $users = foreach ($user in (New-GraphGetRequest -uri 'https://graph.microsoft.com/v1.0/users?$top=999&$select=id,UserPrincipalName,DisplayName,accountEnabled,assignedLicenses,perUserMfaState' -tenantid $TenantFilter)) {
         [PSCustomObject]@{
             UserPrincipalName = $user.UserPrincipalName
             isLicensed        = [boolean]$user.assignedLicenses.skuid
             accountEnabled    = $user.accountEnabled
             DisplayName       = $user.DisplayName
             ObjectId          = $user.id
+            perUserMfaState   = $user.perUserMfaState
         }
     }
 
@@ -40,7 +41,7 @@ function Get-CIPPMFAState {
     if ($null -ne $MFARegistration) {
         $CASuccess = $true
         try {
-            $CAPolicies = (New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/identity/conditionalAccess/policies' -tenantid $TenantFilter -ErrorAction Stop )
+            $CAPolicies = (New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/identity/conditionalAccess/policies?$top=999' -tenantid $TenantFilter -ErrorAction Stop )
             foreach ($Policy in $CAPolicies) {
                 $IsMFAControl = $policy.grantControls.builtincontrols -eq 'mfa' -or $Policy.grantControls.authenticationStrength.requirementsSatisfied -eq 'mfa' -or $Policy.grantControls.customAuthenticationFactors -eq 'RequireDuoMfa'
                 $IsAllApps = [bool]($Policy.conditions.applications.includeApplications -eq 'All')
@@ -68,7 +69,16 @@ function Get-CIPPMFAState {
     }
 
     if ($CAState.count -eq 0) { $CAState.Add('None') | Out-Null }
+    
+    $assignments = New-GraphGetRequest -uri  "https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?`$expand=principal" -tenantid $TenantFilter -ErrorAction SilentlyContinue
 
+    $adminObjectIds = $assignments |
+    Where-Object {
+        $_.principal.'@odata.type' -eq '#microsoft.graph.user'
+    } |
+    ForEach-Object {
+        $_.principal.id
+    }
 
     # Interact with query parameters or the body of the request.
     $GraphRequest = $Users | ForEach-Object {
@@ -97,8 +107,9 @@ function Get-CIPPMFAState {
                 $CoveredByCA = 'Not Enforced'
             }
         }
+        $IsAdmin = if ($adminObjectIds -contains $_.ObjectId) { $true } else { $false }
 
-        $PerUser = if ($null -eq $PerUserMFAState) { $null } else { ($PerUserMFAState | Where-Object -Property UserPrincipalName -EQ $_.UserPrincipalName).PerUserMFAState }
+        $PerUser = $_.PerUserMFAState
 
         $MFARegUser = if ($null -eq ($MFARegistration | Where-Object -Property UserPrincipalName -EQ $_.userPrincipalName).isMFARegistered) { $false } else { ($MFARegistration | Where-Object -Property UserPrincipalName -EQ $_.userPrincipalName) }
 
@@ -116,6 +127,7 @@ function Get-CIPPMFAState {
             CoveredByCA     = $CoveredByCA
             CAPolicies      = $UserCAState
             CoveredBySD     = $SecureDefaultsState
+            IsAdmin         = $IsAdmin
             RowKey          = [string]($_.UserPrincipalName).replace('#', '')
             PartitionKey    = 'users'
         }
