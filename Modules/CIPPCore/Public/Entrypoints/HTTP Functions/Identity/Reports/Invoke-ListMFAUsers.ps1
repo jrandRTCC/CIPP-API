@@ -1,5 +1,3 @@
-using namespace System.Net
-
 Function Invoke-ListMFAUsers {
     <#
     .FUNCTIONALITY
@@ -9,16 +7,11 @@ Function Invoke-ListMFAUsers {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    # Interact with query parameters or the body of the request.
+    $TenantFilter = $Request.Query.tenantFilter
 
-    $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
-
-    if ($Request.query.TenantFilter -ne 'AllTenants') {
-        $GraphRequest = Get-CIPPMFAState -TenantFilter $Request.query.TenantFilter
+    if ($TenantFilter -ne 'AllTenants') {
+        $GraphRequest = Get-CIPPMFAState -TenantFilter $TenantFilter
     } else {
         $Table = Get-CIPPTable -TableName cachemfa
 
@@ -58,8 +51,7 @@ Function Invoke-ListMFAUsers {
             $GraphRequest = $Rows
         }
     }
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = @($GraphRequest)
         })

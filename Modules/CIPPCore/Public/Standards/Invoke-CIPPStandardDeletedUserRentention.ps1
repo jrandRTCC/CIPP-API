@@ -13,6 +13,8 @@ function Invoke-CIPPStandardDeletedUserRentention {
         CAT
             SharePoint Standards
         TAG
+        EXECUTIVETEXT
+            Preserves departed employees' OneDrive files for a specified period, allowing time to recover important business documents before permanent deletion. This helps prevent data loss while managing storage costs and maintaining compliance with data retention policies.
         ADDEDCOMPONENT
             {"type":"autoComplete","multiple":false,"name":"standards.DeletedUserRentention.Days","label":"Retention time (Default 30 days)","options":[{"label":"30 days","value":"30"},{"label":"90 days","value":"90"},{"label":"1 year","value":"365"},{"label":"2 years","value":"730"},{"label":"3 years","value":"1095"},{"label":"4 years","value":"1460"},{"label":"5 years","value":"1825"},{"label":"6 years","value":"2190"},{"label":"7 years","value":"2555"},{"label":"8 years","value":"2920"},{"label":"9 years","value":"3285"},{"label":"10 years","value":"3650"}]}
         IMPACT
@@ -25,20 +27,35 @@ function Invoke-CIPPStandardDeletedUserRentention {
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/sharepoint-standards#low-impact
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
 
     param($Tenant, $Settings)
+    $TestResult = Test-CIPPStandardLicense -StandardName 'DeletedUserRentention' -TenantFilter $Tenant -RequiredCapabilities @('SHAREPOINTWAC', 'SHAREPOINTSTANDARD', 'SHAREPOINTENTERPRISE', 'SHAREPOINTENTERPRISE_EDU','ONEDRIVE_BASIC', 'ONEDRIVE_ENTERPRISE')
     ##$Rerun -Type Standard -Tenant $Tenant -Settings $Settings 'DeletedUserRetention'
 
-    $CurrentInfo = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/admin/sharepoint/settings' -tenantid $Tenant -AsApp $true
+    if ($TestResult -eq $false) {
+        Write-Host "We're exiting as the correct license is not present for this standard."
+        return $true
+    } #we're done.
+
+    try {
+        $CurrentInfo = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/admin/sharepoint/settings' -tenantid $Tenant -AsApp $true
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the DeletedUserRetention state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
+    $Days = $Settings.Days.value ?? $Settings.Days
 
     if ($Settings.report -eq $true) {
+        $CurrentState = $CurrentInfo.deletedUserPersonalSiteRetentionPeriodInDays -eq $Days ? $true : ($CurrentInfo | Select-Object deletedUserPersonalSiteRetentionPeriodInDays)
+        Set-CIPPStandardsCompareField -FieldName 'standards.DeletedUserRentention' -FieldValue $CurrentState -TenantFilter $Tenant
         Add-CIPPBPAField -FieldName 'DeletedUserRentention' -FieldValue $CurrentInfo.deletedUserPersonalSiteRetentionPeriodInDays -StoreAs string -Tenant $Tenant
     }
 
     # Get days value using null-coalescing operator
-    $Days = $Settings.Days.value ?? $Settings.Days
 
     # Input validation
     if (($Days -eq 'Select a value') -and ($Settings.remediate -eq $true -or $Settings.alert -eq $true)) {
@@ -80,7 +97,8 @@ function Invoke-CIPPStandardDeletedUserRentention {
         if ($StateSetCorrectly -eq $true) {
             Write-LogMessage -API 'Standards' -tenant $Tenant -message "Deleted user retention of OneDrive is set to $WantedState day(s)" -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Deleted user retention of OneDrive is not set to $WantedState day(s). Current value is: $($CurrentInfo.deletedUserPersonalSiteRetentionPeriodInDays) day(s)." -sev Alert
+            Write-StandardsAlert -message "Deleted user retention of OneDrive is not set to $WantedState day(s)." -object $CurrentInfo -tenant $Tenant -standardName 'DeletedUserRentention' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Deleted user retention of OneDrive is not set to $WantedState day(s). Current value is: $($CurrentInfo.deletedUserPersonalSiteRetentionPeriodInDays) day(s)." -sev Info
         }
     }
 }
