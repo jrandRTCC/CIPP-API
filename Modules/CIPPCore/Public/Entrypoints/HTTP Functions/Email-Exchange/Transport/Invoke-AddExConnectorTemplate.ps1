@@ -1,9 +1,7 @@
-using namespace System.Net
-
 Function Invoke-AddExConnectorTemplate {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         Exchange.Connector.ReadWrite
     #>
@@ -12,7 +10,7 @@ Function Invoke-AddExConnectorTemplate {
 
     $APIName = $Request.Params.CIPPEndpoint
     $Headers = $Request.Headers
-    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
+
 
     Write-Host ($Request | ConvertTo-Json -Compress)
 
@@ -20,7 +18,7 @@ Function Invoke-AddExConnectorTemplate {
         $GUID = (New-Guid).GUID
         $Select = if ($Request.Body.cippconnectortype -eq 'outbound') {
             @(
-                'name', 'AllAcceptedDomains', 'CloudServicesMailEnabled', 'Comment', 'Confirm', 'ConnectorSource', 'ConnectorType', 'Enabled', 'IsTransportRuleScoped', 'RecipientDomains', 'RouteAllMessagesViaOnPremises', 'SenderRewritingEnabled', 'SmartHosts', 'TestMode', 'TlsDomain', 'TlsSettings', 'UseMXRecord'
+                'name', 'AllAcceptedDomains', 'CloudServicesMailEnabled', 'Comment', 'Confirm', 'ConnectorSource', 'ConnectorType', 'Enabled', 'IsTransportRuleScoped', 'RecipientDomains', 'RouteAllMessagesViaOnPremises', 'SmartHosts', 'TestMode', 'TlsDomain', 'TlsSettings', 'UseMXRecord'
             )
         } else {
             @(
@@ -52,8 +50,7 @@ Function Invoke-AddExConnectorTemplate {
     }
 
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = $StatusCode
             Body       = @{Results = $Result }
         })

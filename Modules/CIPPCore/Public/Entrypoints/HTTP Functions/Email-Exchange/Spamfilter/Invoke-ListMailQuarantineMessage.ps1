@@ -3,21 +3,20 @@ function Invoke-ListMailQuarantineMessage {
     .FUNCTIONALITY
         Entrypoint
     .ROLE
-        Exchange.SpamFilter.ReadWrite
+        Exchange.SpamFilter.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-    $Tenantfilter = $Request.Query.Tenantfilter
+    # Interact with query parameters or the body of the request.
+    $TenantFilter = $Request.Query.tenantFilter
+    $Identity = $Request.Query.Identity
 
     try {
-        $GraphRequest = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Export-QuarantineMessage' -cmdParams @{ 'Identity' = $Request.Query.Identity }
+        $GraphRequest = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Export-QuarantineMessage' -cmdParams @{ 'Identity' = $Identity }
         $EmlBase64 = $GraphRequest.Eml
         $EmlContent = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($EmlBase64))
         $Body = @{
-            'Identity' = $Request.Query.Identity
+            'Identity' = $Identity
             'Message'  = $EmlContent
         }
         $StatusCode = [HttpStatusCode]::OK
@@ -27,8 +26,7 @@ function Invoke-ListMailQuarantineMessage {
         $Body = $ErrorMessage
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = $StatusCode
             Body       = $Body
         })

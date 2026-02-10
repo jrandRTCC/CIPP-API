@@ -13,6 +13,8 @@ function Invoke-CIPPStandardSPSyncButtonState {
         CAT
             SharePoint Standards
         TAG
+        EXECUTIVETEXT
+            Controls whether employees can synchronize SharePoint files to their local devices, balancing productivity benefits with data security concerns. This setting helps manage data distribution while maintaining access to cloud-based collaboration when sync is disabled.
         ADDEDCOMPONENT
             {"type":"autoComplete","multiple":false,"creatable":false,"label":"SharePoint Sync Button state","name":"standards.SPSyncButtonState.state","options":[{"label":"Disabled","value":"true"},{"label":"Enabled","value":"false"}]}
         IMPACT
@@ -25,23 +27,30 @@ function Invoke-CIPPStandardSPSyncButtonState {
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/sharepoint-standards#medium-impact
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
 
     param($Tenant, $Settings)
-    ##$Rerun -Type Standard -Tenant $Tenant -Settings $Settings 'SPSyncButtonState'
+    $TestResult = Test-CIPPStandardLicense -StandardName 'SPSyncButtonState' -TenantFilter $Tenant -RequiredCapabilities @('SHAREPOINTWAC', 'SHAREPOINTSTANDARD', 'SHAREPOINTENTERPRISE', 'SHAREPOINTENTERPRISE_EDU', 'ONEDRIVE_BASIC', 'ONEDRIVE_ENTERPRISE')
 
-    $CurrentState = Get-CIPPSPOTenant -TenantFilter $Tenant | Select-Object _ObjectIdentity_, TenantFilter, HideSyncButtonOnDocLib
+    if ($TestResult -eq $false) {
+        return $true
+    } #we're done.
 
-    if ($Settings.report -eq $true) {
-        Add-CIPPBPAField -FieldName 'SPSyncButtonDisabled' -FieldValue $CurrentState.HideSyncButtonOnDocLib -StoreAs bool -Tenant $Tenant
+    try {
+        $CurrentState = Get-CIPPSPOTenant -TenantFilter $Tenant | Select-Object _ObjectIdentity_, TenantFilter, HideSyncButtonOnDocLib
+    } catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the SPSyncButtonState state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
     }
+
 
     # Input validation
     $StateValue = $Settings.state.value ?? $Settings.state
     if (([string]::IsNullOrWhiteSpace($StateValue) -or $StateValue -eq 'Select a value') -and ($Settings.remediate -eq $true -or $Settings.alert -eq $true)) {
         Write-LogMessage -API 'Standards' -tenant $tenant -message 'SPSyncButtonState: Invalid state parameter set' -sev Error
-        Return
+        return
     }
 
     $WantedState = [System.Convert]::ToBoolean($StateValue)
@@ -49,8 +58,6 @@ function Invoke-CIPPStandardSPSyncButtonState {
     $HumanReadableState = if ($WantedState -eq $true) { 'disabled' } else { 'enabled' }
 
     if ($Settings.remediate -eq $true) {
-        Write-Host 'Time to remediate'
-
         if ($StateIsCorrect -eq $false) {
             try {
                 $CurrentState | Set-CIPPSPOTenant -Properties @{HideSyncButtonOnDocLib = $WantedState }
@@ -69,7 +76,25 @@ function Invoke-CIPPStandardSPSyncButtonState {
         if ($StateIsCorrect -eq $true) {
             Write-LogMessage -API 'Standards' -tenant $tenant -message "The SharePoint Sync Button is already set to the wanted state of $HumanReadableState" -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $tenant -message "The SharePoint Sync Button is not set to the wanted state of $HumanReadableState" -sev Alert
+            Write-StandardsAlert -message "The SharePoint Sync Button is not set to the wanted state of $HumanReadableState" -object $CurrentState -tenant $tenant -standardName 'SPSyncButtonState' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $tenant -message "The SharePoint Sync Button is not set to the wanted state of $HumanReadableState" -sev Info
         }
     }
+
+    if ($Settings.report -eq $true) {
+        Add-CIPPBPAField -FieldName 'SPSyncButtonDisabled' -FieldValue $CurrentState.HideSyncButtonOnDocLib -StoreAs bool -Tenant $Tenant
+        if ($StateIsCorrect) {
+            $FieldValue = $true
+        } else {
+            $FieldValue = $CurrentState
+        }
+        $CurrentValue = @{
+            HideSyncButtonOnDocLib = $CurrentState.HideSyncButtonOnDocLib
+        }
+        $ExpectedValue = @{
+            HideSyncButtonOnDocLib = $WantedState
+        }
+        Set-CIPPStandardsCompareField -FieldName 'standards.SPSyncButtonState' -CurrentValue $CurrentValue -ExpectedValue $ExpectedValue -Tenant $Tenant
+    }
+
 }

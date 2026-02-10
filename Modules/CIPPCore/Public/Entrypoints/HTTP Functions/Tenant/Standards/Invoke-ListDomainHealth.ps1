@@ -1,15 +1,14 @@
-using namespace System.Net
-
-Function Invoke-ListDomainHealth {
+function Invoke-ListDomainHealth {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         Tenant.DomainAnalyser.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
+    $APIName = $Request.Params.CIPPEndpoint
     Import-Module DNSHealth
 
     try {
@@ -17,7 +16,7 @@ Function Invoke-ListDomainHealth {
         $Filter = "PartitionKey eq 'Domains' and RowKey eq 'Domains'"
         $Config = Get-CIPPAzDataTableEntity @ConfigTable -Filter $Filter
 
-        $ValidResolvers = @('Google', 'CloudFlare', 'Quad9')
+        $ValidResolvers = @('Google', 'CloudFlare')
         if ($ValidResolvers -contains $Config.Resolver) {
             $Resolver = $Config.Resolver
         } else {
@@ -34,14 +33,11 @@ Function Invoke-ListDomainHealth {
     }
 
     Set-DnsResolver -Resolver $Resolver
-    #UNDOREPLACE
-    $UserCreds = ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($request.headers.'x-ms-client-principal')) | ConvertFrom-Json)
+
+    $UserRoles = Get-CIPPAccessRole -Request $Request
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
 
     $StatusCode = [HttpStatusCode]::OK
     try {
@@ -83,7 +79,7 @@ Function Invoke-ListDomainHealth {
                         if ($Request.Query.Selector) {
                             $DkimQuery.Selectors = ($Request.Query.Selector).trim() -split '\s*,\s*'
 
-                            if ('admin' -in $UserCreds.userRoles -or 'editor' -in $UserCreds.userRoles) {
+                            if ('admin' -in $UserRoles -or 'editor' -in $UserRoles) {
                                 $DkimSelectors = [string]($DkimQuery.Selectors | ConvertTo-Json -Compress)
                                 if ($DomainInfo) {
                                     $DomainInfo.DkimSelectors = $DkimSelectors
@@ -148,8 +144,7 @@ Function Invoke-ListDomainHealth {
         $StatusCode = [HttpStatusCode]::InternalServerError
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = $StatusCode
             Body       = $body
         })

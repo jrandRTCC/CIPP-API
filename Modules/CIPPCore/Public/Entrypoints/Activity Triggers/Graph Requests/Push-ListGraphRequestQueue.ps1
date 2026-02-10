@@ -35,16 +35,22 @@ function Push-ListGraphRequestQueue {
             ReverseTenantLookupProperty = $Item.ReverseTenantLookupProperty
             ReverseTenantLookup         = $Item.ReverseTenantLookup
             AsApp                       = $Item.AsApp ?? $false
+            Caller                      = 'Push-ListGraphRequestQueue'
             SkipCache                   = $true
         }
 
         $RawGraphRequest = try {
-            Get-GraphRequestList @GraphRequestParams
+            $Results = Get-GraphRequestList @GraphRequestParams
+            if ($Results[-1].PSObject.Properties.Name -contains 'nextLink') {
+                $Results | Select-Object -First ($Results.Count - 1)
+            } else {
+                $Results
+            }
         } catch {
             $CippException = Get-CippException -Exception $_.Exception
             [PSCustomObject]@{
-                Tenant     = $Item.TenantFilter
-                CippStatus = "Could not connect to tenant. $($CippException.NormalizedMessage)"
+                Tenant        = $Item.TenantFilter
+                CippStatus    = "Could not connect to tenant. $($CippException.NormalizedMessage)"
                 CippException = [string]($CippException | ConvertTo-Json -Depth 10 -Compress)
             }
         }
@@ -57,6 +63,7 @@ function Push-ListGraphRequestQueue {
             Data         = [string]$Json
         }
         Add-CIPPAzDataTableEntity @Table -Entity $GraphResults -Force | Out-Null
+        return $true
     } catch {
         Write-Warning "Queue Error: $($_.Exception.Message)"
         #Write-Information ($GraphResults | ConvertTo-Json -Depth 10 -Compress)

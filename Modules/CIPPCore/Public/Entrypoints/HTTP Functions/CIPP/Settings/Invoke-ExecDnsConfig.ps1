@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ExecDnsConfig {
+function Invoke-ExecDnsConfig {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -11,17 +9,13 @@ Function Invoke-ExecDnsConfig {
     param($Request, $TriggerMetadata)
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
     # List of supported resolvers
     $ValidResolvers = @(
         'Google'
         'Cloudflare'
-        'Quad9'
     )
 
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
+
 
     $StatusCode = [HttpStatusCode]::OK
     try {
@@ -106,8 +100,7 @@ Function Invoke-ExecDnsConfig {
         $StatusCode = [HttpStatusCode]::BadRequest
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = $StatusCode
             Body       = $body
         })

@@ -13,6 +13,11 @@ function Invoke-CIPPStandardGuestInvite {
         CAT
             Entra (AAD) Standards
         TAG
+            "CISA (MS.AAD.18.1v1)"
+            "EIDSCA.AP04"
+            "EIDSCA.AP07"
+        EXECUTIVETEXT
+            Controls who within the organization can invite external partners and vendors to access company resources, ensuring proper oversight of external access while enabling necessary business collaboration. This helps maintain security while supporting partnership and vendor relationships.
         ADDEDCOMPONENT
             {"type":"autoComplete","required":true,"multiple":false,"creatable":false,"label":"Who can send invites?","name":"standards.GuestInvite.allowInvitesFrom","options":[{"label":"Everyone","value":"everyone"},{"label":"Admins, Guest inviters and All Members","value":"adminsGuestInvitersAndAllMembers"},{"label":"Admins and Guest inviters","value":"adminsAndGuestInviters"},{"label":"None","value":"none"}]}
         IMPACT
@@ -20,23 +25,29 @@ function Invoke-CIPPStandardGuestInvite {
         ADDEDDATE
             2024-11-12
         POWERSHELLEQUIVALENT
-            
+            Graph API
         RECOMMENDEDBY
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/entra-aad-standards#medium-impact
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards
     #>
 
     param($Tenant, $Settings)
 
-    $CurrentState = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/policies/authorizationPolicy/authorizationPolicy' -tenantid $Tenant
+    try {
+        $CurrentState = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/policies/authorizationPolicy/authorizationPolicy' -tenantid $Tenant
+    } catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the GuestInvite state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     # Input validation and value handling
     $AllowInvitesFromValue = $Settings.allowInvitesFrom.value ?? $Settings.allowInvitesFrom
     if (([string]::IsNullOrWhiteSpace($AllowInvitesFromValue) -or $AllowInvitesFromValue -eq 'Select a value') -and ($Settings.remediate -eq $true -or $Settings.alert -eq $true)) {
         Write-LogMessage -API 'Standards' -tenant $tenant -message 'GuestInvite: Invalid allowInvitesFrom parameter set' -sev Error
-        Return
+        return
     }
 
     $StateIsCorrect = ($CurrentState.allowInvitesFrom -eq $AllowInvitesFromValue)
@@ -68,11 +79,21 @@ function Invoke-CIPPStandardGuestInvite {
         if ($StateIsCorrect -eq $true) {
             Write-LogMessage -API 'Standards' -tenant $tenant -message 'Guest Invite settings is enabled.' -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Guest Invite settings is not enabled.' -sev Alert
+            $Object = $CurrentState | Select-Object -Property allowInvitesFrom
+            Write-StandardsAlert -message 'Guest Invite settings is not enabled' -object $Object -tenant $tenant -standardName 'GuestInvite' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Guest Invite settings is not enabled.' -sev Info
         }
     }
 
     if ($Settings.report -eq $true) {
+        $CurrentValue = @{
+            allowInvitesFrom = $CurrentState.allowInvitesFrom
+        }
+        $ExpectedValue = @{
+            allowInvitesFrom = $AllowInvitesFromValue
+        }
+
+        Set-CIPPStandardsCompareField -FieldName 'standards.GuestInvite' -CurrentValue $CurrentValue -ExpectedValue $ExpectedValue -TenantFilter $Tenant
         Add-CIPPBPAField -FieldName 'GuestInvite' -FieldValue $StateIsCorrect -StoreAs bool -Tenant $tenant
     }
 }

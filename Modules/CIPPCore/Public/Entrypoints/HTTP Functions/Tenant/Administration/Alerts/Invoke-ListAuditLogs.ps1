@@ -7,11 +7,6 @@ function Invoke-ListAuditLogs {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $Request.Params.CIPPEndpoint
-    $Headers = $Request.Headers
-    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
-
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.tenantFilter
     $LogID = $Request.Query.LogId
@@ -69,20 +64,23 @@ function Invoke-ListAuditLogs {
     if ($FilterConditions) {
         $Table.Filter = $FilterConditions -join ' and '
     }
-    $AuditLogs = Get-CIPPAzDataTableEntity @Table | ForEach-Object {
+
+    $Tenants = Get-Tenants -IncludeErrors
+
+    $AuditLogs = Get-CIPPAzDataTableEntity @Table | Where-Object { $Tenants.defaultDomainName -contains $_.Tenant } | ForEach-Object {
         $_.Data = try { $_.Data | ConvertFrom-Json } catch { $_.AuditData }
         $_ | Select-Object @{n = 'LogId'; exp = { $_.RowKey } }, @{ n = 'Timestamp'; exp = { $_.Data.RawData.CreationTime } }, Tenant, Title, Data
     }
 
     $Body = @{
-        Results  = @($AuditLogs)
+        Results  = @($AuditLogs | Sort-Object -Property Timestamp -Descending)
         Metadata = @{
             Count  = $AuditLogs.Count
             Filter = $Table.Filter ?? ''
         }
     }
 
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $Body
         })

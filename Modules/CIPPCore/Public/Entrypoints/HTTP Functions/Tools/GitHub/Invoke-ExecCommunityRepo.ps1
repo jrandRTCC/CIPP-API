@@ -5,7 +5,7 @@ function Invoke-ExecCommunityRepo {
     .DESCRIPTION
         This function makes changes to a community repository in table storage
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         CIPP.Core.ReadWrite
     #>
@@ -29,7 +29,7 @@ function Invoke-ExecCommunityRepo {
             Results = $Results
         }
 
-        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+        return ([HttpResponseContext]@{
                 StatusCode = [HttpStatusCode]::OK
                 Body       = $Body
             })
@@ -107,7 +107,7 @@ function Invoke-ExecCommunityRepo {
         'UploadTemplate' {
             $GUID = $Request.Body.GUID
             $TemplateTable = Get-CIPPTable -TableName templates
-            $TemplateEntity = Get-CIPPAzDataTableEntity @TemplateTable -Filter "RowKey eq '$($GUID)'"
+            $TemplateEntity = Get-CIPPAzDataTableEntity @TemplateTable -Filter "RowKey eq '$($GUID)'" | Select-Object -ExcludeProperty ETag, Timestamp
             $Branch = $RepoEntity.UploadBranch ?? $RepoEntity.DefaultBranch
             if ($TemplateEntity) {
                 $Template = $TemplateEntity.JSON | ConvertFrom-Json
@@ -169,11 +169,17 @@ function Invoke-ExecCommunityRepo {
 
                     $MigrationTable = $Files | Where-Object { $_.name -eq 'MigrationTable' } | Select-Object -Last 1
                     if ($MigrationTable) {
-                        Write-Host 'Found a migration table, getting contents'
+                        Write-Host "Found a migration table, getting contents for $FullName"
                         $MigrationTable = (Get-GitHubFileContents -FullName $FullName -Branch $Branch -Path $MigrationTable.path).content | ConvertFrom-Json
                     }
+
+                    $NamedLocations = $Files | Where-Object { $_.name -match 'ALLOWED COUNTRIES' }
+                    $LocationData = foreach ($Location in $NamedLocations) {
+                        (Get-GitHubFileContents -FullName $FullName -Branch $Branch -Path $Location.path).content | ConvertFrom-Json
+                    }
                 }
-                Import-CommunityTemplate -Template $Content -SHA $Template.sha -MigrationTable $MigrationTable
+                Import-CommunityTemplate -Template $Content -SHA $Template.sha -MigrationTable $MigrationTable -LocationData $LocationData
+
                 $Results = @{
                     resultText = 'Template imported'
                     state      = 'success'
@@ -197,7 +203,7 @@ function Invoke-ExecCommunityRepo {
         Results = @($Results)
     }
 
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $Body
         })
